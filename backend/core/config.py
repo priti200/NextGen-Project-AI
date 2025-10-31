@@ -2,8 +2,8 @@
 Configuration management using Pydantic Settings
 """
 
-from pydantic_settings import BaseSettings
-from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List, Union
 import os
 
 
@@ -16,9 +16,17 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # CORS settings
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
-    ALLOWED_HOSTS: List[str] = ["localhost", "127.0.0.1"]
+    # CORS settings - using string that will be split
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+    ALLOWED_HOSTS: str = "localhost,127.0.0.1"
+    
+    def get_allowed_origins(self) -> List[str]:
+        """Get ALLOWED_ORIGINS as a list"""
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',')]
+    
+    def get_allowed_hosts(self) -> List[str]:
+        """Get ALLOWED_HOSTS as a list"""
+        return [host.strip() for host in self.ALLOWED_HOSTS.split(',')]
     
     # Database settings
     DATABASE_URL: str = "postgresql://user:password@localhost:5432/projectai"
