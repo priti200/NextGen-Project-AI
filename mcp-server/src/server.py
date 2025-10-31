@@ -16,6 +16,7 @@ from models.base import (
     CompletionRequest, CompletionResponse, 
     model_registry, Message
 )
+from models.factory import initialize_models
 from tools.base import tool_registry, ToolResult
 from utils.logger import setup_logging, get_logger
 
@@ -84,8 +85,9 @@ async def lifespan(app: FastAPI):
                 host=settings.mcp_server_host, 
                 port=settings.mcp_server_port)
     
-    # Initialize models (will be implemented in next task)
+    # Initialize LLM models
     logger.info("Initializing LLM models...")
+    initialize_models()
     
     # Initialize tools (will be implemented in next task)
     logger.info("Initializing tools...")
