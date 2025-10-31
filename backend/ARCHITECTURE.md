@@ -3,7 +3,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         CLIENT APPLICATIONS                          │
-│              (Frontend, Mobile, CLI, External Systems)               │
+│              (Frontend,  CLI, External Systems)               │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                │ HTTP/HTTPS + JWT
@@ -51,7 +51,7 @@
         │                   │                   │
         ▼                   ▼                   ▼
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  DATABASE    │  │  REDIS       │  │  ML SERVICE  │
+│  DATABASE    │  │  RabbitMQ    |  │  ML SERVICE  │
 │              │  │              │  │              │
 │ • Issues     │  │ • Cache      │  │ • Risk Model │
 │ • PRs        │  │ • Sessions   │  │ • LLM        │
@@ -78,6 +78,7 @@
 ## Data Flow Examples
 
 ### 1. Dashboard Request Flow
+
 ```
 Client Request
     ↓
@@ -99,6 +100,7 @@ JSON Response to Client
 ```
 
 ### 2. Risk Prediction Flow
+
 ```
 Client POST /api/v1/predict-risk
     ↓
@@ -120,6 +122,7 @@ Client receives prediction + factors
 ```
 
 ### 3. Summarization with RLHF Flow
+
 ```
 Client POST /api/v1/summarize
     ↓
@@ -147,6 +150,7 @@ Store Feedback for RLHF Training
 ```
 
 ### 4. Integration Sync Flow
+
 ```
 POST /api/v1/integrations/jira/sync
     ↓
@@ -168,6 +172,7 @@ Return "sync_started" Response
 ```
 
 ### 5. Real-time Webhook Flow
+
 ```
 GitHub Event (PR opened)
     ↓
@@ -191,24 +196,29 @@ Send Slack Notification (if configured)
 ## Key Design Patterns
 
 ### 1. **Layered Architecture**
+
 - Routes (API Layer)
 - Schemas (Validation Layer)
 - Services (Business Logic Layer)
 - External Services (Integration Layer)
 
 ### 2. **Dependency Injection**
+
 - FastAPI's `Depends()` for auth, db sessions
 - Service instances created per request
 
 ### 3. **Async/Await**
+
 - All endpoints are async-ready
 - Background tasks for long-running operations
 
 ### 4. **Type Safety**
+
 - Pydantic models for all requests/responses
 - Type hints throughout codebase
 
 ### 5. **Separation of Concerns**
+
 - Each route file handles one domain
 - Services contain business logic
 - Schemas define data contracts
@@ -264,21 +274,22 @@ Return Generic 500 Response
 ## Performance Considerations
 
 1. **Caching Strategy**
+
    - Dashboard data: 5 min TTL
    - User permissions: 15 min TTL
    - Risk predictions: 1 hour TTL
-
 2. **Database Optimization**
+
    - Indexes on frequently queried fields
    - Connection pooling
    - Query optimization
-
 3. **Background Processing**
+
    - Heavy computations in background tasks
    - Celery for scheduled jobs
    - Rate limiting on external APIs
-
 4. **Response Optimization**
+
    - Pagination for list endpoints
    - Field selection/filtering
    - Gzip compression
