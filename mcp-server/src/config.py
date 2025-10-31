@@ -1,5 +1,5 @@
 """
-Configuration management for MCP Server
+Configuration management using Pydantic settings
 """
 from pydantic_settings import BaseSettings
 from typing import Optional, List, Dict, Any
@@ -7,37 +7,37 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    """Application settings with environment variable support"""
+    """Application settings loaded from environment variables"""
     
-    # Server Configuration
+    # Server configuration
     mcp_server_host: str = "0.0.0.0"
     mcp_server_port: int = 8080
     mcp_log_level: str = "INFO"
     mcp_debug: bool = False
     mcp_workers: int = 4
     
-    # CORS Settings
+    # CORS configuration
     allowed_origins: str = "http://localhost:3000,http://localhost:8000"
     
-    # LLM API Keys
+    # LLM provider API keys
     google_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     
-    # Default Model Configuration
+    # Model defaults
     default_model: str = "gemini-pro"
     max_tokens: int = 2048
     temperature: float = 0.7
     
-    # Database Configuration
+    # Database configuration
     database_url: str = "postgresql+asyncpg://mcp_user:mcp_password@localhost:5432/mcp_db"
     redis_url: str = "redis://localhost:6379/0"
     
-    # Session Configuration
+    # Session management
     session_expire_minutes: int = 60
     max_context_length: int = 10000
     
-    # Integration APIs
+    # External integrations
     jira_api_url: Optional[str] = None
     jira_api_token: Optional[str] = None
     jira_email: Optional[str] = None
@@ -48,30 +48,27 @@ class Settings(BaseSettings):
     slack_bot_token: Optional[str] = None
     slack_signing_secret: Optional[str] = None
     
-    # Rate Limiting
+    # Rate limiting
     rate_limit_requests: int = 100
     rate_limit_period: int = 60
     
-    # Security
+    # Security settings
     secret_key: str = "change_this_secret_key_in_production"
     algorithm: str = "HS256"
-    
-    # Custom Model Configuration (dynamically loaded)
-    # Format: CUSTOM_MODEL_<N>_<PROPERTY>
-    # These are loaded dynamically in get_custom_models()
+    api_key: Optional[str] = None
     
     class Config:
         env_file = ".env"
         case_sensitive = False
     
     def get_allowed_origins(self) -> List[str]:
-        """Parse comma-separated CORS origins"""
+        """Parses comma-separated CORS origins into list"""
         if not self.allowed_origins:
             return []
         return [origin.strip() for origin in self.allowed_origins.split(",")]
     
     def validate_model_config(self, model_name: str) -> bool:
-        """Validate if model is configured with required API key"""
+        """Checks if required API key is configured for specified model"""
         if model_name.startswith("gemini"):
             return self.google_api_key is not None
         elif model_name.startswith("gpt"):
@@ -79,16 +76,11 @@ class Settings(BaseSettings):
         elif model_name.startswith("claude"):
             return self.anthropic_api_key is not None
         elif model_name.startswith("custom-"):
-            return True  # Custom models are validated separately
+            return True
         return False
     
     def get_custom_models(self) -> List[Dict[str, Any]]:
-        """
-        Parse custom model configurations from environment variables
-        
-        Returns:
-            List of custom model configurations
-        """
+        """Parses custom model configurations from environment variables"""
         import os
         custom_models = []
         model_index = 1
@@ -97,11 +89,9 @@ class Settings(BaseSettings):
             prefix = f"CUSTOM_MODEL_{model_index}_"
             name_key = f"{prefix}NAME"
             
-            # Check if this custom model is configured
             if name_key not in os.environ:
                 break
             
-            # Extract configuration
             config = {
                 "name": os.environ.get(name_key),
                 "base_url": os.environ.get(f"{prefix}BASE_URL"),
@@ -111,7 +101,6 @@ class Settings(BaseSettings):
                 "supports_vision": os.environ.get(f"{prefix}SUPPORTS_VISION", "false").lower() == "true",
             }
             
-            # Validate required fields
             if config["name"] and config["base_url"]:
                 custom_models.append(config)
             
@@ -122,7 +111,7 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance"""
+    """Returns cached singleton settings instance"""
     return Settings()
 
 

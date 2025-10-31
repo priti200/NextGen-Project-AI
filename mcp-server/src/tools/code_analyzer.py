@@ -1,6 +1,5 @@
 """
-Code Analyzer Tool
-Analyzes code quality, complexity, and patterns from GitHub repositories
+Code Analyzer Tool - GitHub repository analysis and quality metrics
 """
 from typing import Dict, Any, Optional
 import httpx
@@ -10,7 +9,10 @@ from .base import BaseTool, ToolParameter, ToolParameterType, ToolResult
 
 
 class CodeAnalyzerTool(BaseTool):
-    """Analyzes code quality and patterns from repositories"""
+    """
+    Analyzes GitHub repositories for code quality and health metrics.
+    Provides insights on structure, documentation, testing, and CI/CD setup.
+    """
     
     name = "analyze_code"
     description = "Analyzes code quality, complexity, and patterns from GitHub repositories"
@@ -51,15 +53,7 @@ class CodeAnalyzerTool(BaseTool):
         }
     
     async def execute(self, parameters: Dict[str, Any]) -> ToolResult:
-        """
-        Execute code analysis
-        
-        Args:
-            parameters: Tool parameters including repository and path
-            
-        Returns:
-            ToolResult with code analysis
-        """
+        """Executes repository analysis and returns quality metrics."""
         try:
             repository = parameters["repository"]
             path = parameters.get("path", "")
@@ -69,7 +63,6 @@ class CodeAnalyzerTool(BaseTool):
             if not self.github_token:
                 return self._mock_analysis(repository, path)
             
-            # Perform real analysis
             analysis = await self._analyze_repository(
                 repository, path, branch, depth
             )
@@ -85,10 +78,10 @@ class CodeAnalyzerTool(BaseTool):
                 }
             )
             
-        except Exception as e:
+        except Exception as error:
             return ToolResult(
                 success=False,
-                error=f"Code analysis failed: {str(e)}"
+                error=f"Code analysis failed: {str(error)}"
             )
     
     async def _analyze_repository(
@@ -159,7 +152,7 @@ class CodeAnalyzerTool(BaseTool):
         headers: dict,
         depth: str
     ) -> Dict[str, Any]:
-        """Calculate code metrics"""
+        """Calculates code metrics from repository contents."""
         
         metrics = {
             "total_files": 0,
@@ -176,20 +169,20 @@ class CodeAnalyzerTool(BaseTool):
                 if item["type"] == "file":
                     metrics["total_files"] += 1
                     
-                    # Check file type
-                    ext = item["name"].split(".")[-1] if "." in item["name"] else "none"
-                    metrics["file_types"][ext] = metrics["file_types"].get(ext, 0) + 1
+                    filename = item["name"]
+                    file_extension = filename.split(".")[-1] if "." in filename else "none"
+                    metrics["file_types"][file_extension] = metrics["file_types"].get(file_extension, 0) + 1
                     
-                    # Check for special files
-                    if item["name"].lower() == "readme.md":
+                    filename_lower = filename.lower()
+                    if filename_lower == "readme.md":
                         metrics["has_readme"] = True
-                    if "test" in item["name"].lower():
+                    if "test" in filename_lower:
                         metrics["has_tests"] = True
-                    if item["name"] in [".github", ".gitlab-ci.yml", ".travis.yml"]:
+                    if filename in [".github", ".gitlab-ci.yml", ".travis.yml"]:
                         metrics["has_ci"] = True
                     
-                    # Get file size
-                    if depth != "quick" and item.get("size", 0) < 100000:  # < 100KB
+                    # Count lines for standard and deep analysis
+                    if depth != "quick" and item.get("size", 0) < 100000:
                         try:
                             file_response = await client.get(
                                 item["download_url"],
@@ -197,11 +190,11 @@ class CodeAnalyzerTool(BaseTool):
                                 timeout=5.0
                             )
                             if file_response.status_code == 200:
-                                content = file_response.text
-                                lines = content.count("\n") + 1
-                                metrics["total_lines"] += lines
+                                file_content = file_response.text
+                                line_count = file_content.count("\n") + 1
+                                metrics["total_lines"] += line_count
                         except:
-                            pass  # Skip files that fail to download
+                            pass
         
         if metrics["total_files"] > 0:
             metrics["average_file_size"] = metrics["total_lines"] // metrics["total_files"]
@@ -209,44 +202,37 @@ class CodeAnalyzerTool(BaseTool):
         return metrics
     
     def _calculate_quality_score(self, metrics: Dict[str, Any]) -> float:
-        """Calculate code quality score (0-100)"""
-        score = 50.0  # Base score
+        """Calculates quality score based on best practices and project health."""
+        score = 50.0
         
-        # Has README
         if metrics["has_readme"]:
             score += 10
-        
-        # Has tests
         if metrics["has_tests"]:
             score += 20
-        
-        # Has CI/CD
         if metrics["has_ci"]:
             score += 15
-        
-        # File organization (not too many files in root)
         if metrics["total_files"] < 50:
             score += 5
         
         return min(100, score)
     
     def _generate_code_recommendations(self, metrics: Dict[str, Any]) -> list:
-        """Generate code quality recommendations"""
+        """Generates improvement suggestions based on analysis metrics."""
         recommendations = []
         
         if not metrics["has_readme"]:
             recommendations.append({
                 "category": "documentation",
                 "priority": "high",
-                "suggestion": "Add README.md",
-                "impact": "Improves project understandability"
+                "suggestion": "Add README.md with project overview and setup instructions",
+                "impact": "Improves project understandability and onboarding"
             })
         
         if not metrics["has_tests"]:
             recommendations.append({
                 "category": "quality",
                 "priority": "critical",
-                "suggestion": "Add test suite",
+                "suggestion": "Implement test suite with unit and integration tests",
                 "impact": "Improves code reliability and maintainability"
             })
         
@@ -254,16 +240,16 @@ class CodeAnalyzerTool(BaseTool):
             recommendations.append({
                 "category": "automation",
                 "priority": "medium",
-                "suggestion": "Set up CI/CD pipeline",
-                "impact": "Automates testing and deployment"
+                "suggestion": "Configure CI/CD pipeline (GitHub Actions, GitLab CI, etc.)",
+                "impact": "Automates testing and deployment process"
             })
         
         if metrics["total_files"] > 100:
             recommendations.append({
                 "category": "organization",
                 "priority": "low",
-                "suggestion": "Consider organizing files into subdirectories",
-                "impact": "Improves code navigation"
+                "suggestion": "Reorganize codebase into logical subdirectories",
+                "impact": "Improves code navigation and maintenance"
             })
         
         return recommendations

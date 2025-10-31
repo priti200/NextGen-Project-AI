@@ -1,5 +1,5 @@
 """
-Base tool interface for MCP tools
+Base classes and interfaces for MCP tools
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
@@ -8,7 +8,7 @@ from enum import Enum
 
 
 class ToolParameterType(str, Enum):
-    """Supported parameter types for tools"""
+    """Enumeration of supported parameter types"""
     STRING = "string"
     NUMBER = "number"
     INTEGER = "integer"
@@ -18,7 +18,7 @@ class ToolParameterType(str, Enum):
 
 
 class ToolParameter(BaseModel):
-    """Tool parameter definition"""
+    """Defines a single tool parameter with type and constraints"""
     type: ToolParameterType
     description: str
     required: bool = True
@@ -29,7 +29,7 @@ class ToolParameter(BaseModel):
 
 
 class ToolDefinition(BaseModel):
-    """Tool definition for MCP protocol"""
+    """Complete tool definition with metadata and parameters"""
     name: str
     description: str
     parameters: Dict[str, ToolParameter]
@@ -38,7 +38,7 @@ class ToolDefinition(BaseModel):
 
 
 class ToolResult(BaseModel):
-    """Result from tool execution"""
+    """Standard result structure returned from tool execution"""
     success: bool
     data: Optional[Any] = None
     error: Optional[str] = None
@@ -46,53 +46,29 @@ class ToolResult(BaseModel):
 
 
 class BaseTool(ABC):
-    """Base class for all MCP tools"""
+    """Abstract base class that all MCP tools must extend"""
     
-    # These should be overridden in subclasses
     name: str = "base_tool"
     description: str = "Base tool description"
     category: str = "general"
     version: str = "1.0.0"
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the tool
-        
-        Args:
-            config: Tool-specific configuration
-        """
+        """Initializes tool with optional configuration"""
         self.config = config or {}
     
     @abstractmethod
     async def execute(self, parameters: Dict[str, Any]) -> ToolResult:
-        """
-        Execute the tool with given parameters
-        
-        Args:
-            parameters: Tool parameters
-            
-        Returns:
-            ToolResult with execution results
-        """
+        """Executes the tool with provided parameters and returns result"""
         pass
     
     @abstractmethod
     def get_parameters(self) -> Dict[str, ToolParameter]:
-        """
-        Get tool parameter definitions
-        
-        Returns:
-            Dictionary of parameter definitions
-        """
+        """Returns parameter definitions for this tool"""
         pass
     
     def get_definition(self) -> ToolDefinition:
-        """
-        Get complete tool definition
-        
-        Returns:
-            ToolDefinition for this tool
-        """
+        """Returns complete tool definition including metadata and parameters"""
         return ToolDefinition(
             name=self.name,
             description=self.description,
@@ -102,23 +78,13 @@ class BaseTool(ABC):
         )
     
     def validate_parameters(self, parameters: Dict[str, Any]) -> tuple[bool, Optional[str]]:
-        """
-        Validate parameters before execution
-        
-        Args:
-            parameters: Parameters to validate
-            
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
+        """Validates parameters against tool definition before execution"""
         param_defs = self.get_parameters()
         
-        # Check required parameters
         for name, param_def in param_defs.items():
             if param_def.required and name not in parameters:
                 return False, f"Required parameter '{name}' is missing"
         
-        # Check parameter types
         for name, value in parameters.items():
             if name not in param_defs:
                 return False, f"Unknown parameter '{name}'"
@@ -130,7 +96,7 @@ class BaseTool(ABC):
         return True, None
     
     def _validate_type(self, value: Any, expected_type: ToolParameterType) -> bool:
-        """Validate value type"""
+        """Checks if value matches expected parameter type"""
         type_map = {
             ToolParameterType.STRING: str,
             ToolParameterType.NUMBER: (int, float),
@@ -147,7 +113,7 @@ class BaseTool(ABC):
 
 
 class ToolRegistry:
-    """Registry for managing tool instances"""
+    """Central registry for managing and accessing tool instances"""
     
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}

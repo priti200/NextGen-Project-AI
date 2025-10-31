@@ -1,5 +1,5 @@
 """
-Base model interface for LLM integrations
+Base interfaces for LLM model integrations
 """
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, AsyncIterator
@@ -7,21 +7,21 @@ from pydantic import BaseModel
 
 
 class Message(BaseModel):
-    """Message structure for LLM conversations"""
+    """Represents a single message in LLM conversation"""
     role: str  # "system", "user", "assistant"
     content: str
     name: Optional[str] = None
 
 
 class ToolCall(BaseModel):
-    """Tool call structure"""
+    """Represents a function/tool call made by the LLM"""
     id: str
     type: str = "function"
     function: Dict[str, Any]
 
 
 class CompletionRequest(BaseModel):
-    """Request structure for LLM completion"""
+    """Request structure for generating LLM completions"""
     messages: List[Message]
     model: str
     max_tokens: Optional[int] = None
@@ -32,7 +32,7 @@ class CompletionRequest(BaseModel):
 
 
 class CompletionResponse(BaseModel):
-    """Response structure for LLM completion"""
+    """Response structure containing LLM completion results"""
     model: str
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
@@ -42,16 +42,10 @@ class CompletionResponse(BaseModel):
 
 
 class BaseModel(ABC):
-    """Base class for all LLM model integrations"""
+    """Abstract base class for LLM model integrations"""
     
     def __init__(self, api_key: str, **kwargs):
-        """
-        Initialize the model
-        
-        Args:
-            api_key: API key for the model provider
-            **kwargs: Additional configuration options
-        """
+        """Initializes model with API credentials and configuration"""
         self.api_key = api_key
         self.config = kwargs
     
@@ -60,15 +54,7 @@ class BaseModel(ABC):
         self,
         request: CompletionRequest
     ) -> CompletionResponse:
-        """
-        Generate completion from the model
-        
-        Args:
-            request: Completion request with messages and parameters
-            
-        Returns:
-            CompletionResponse with generated content
-        """
+        """Generates completion from model based on messages and parameters"""
         pass
     
     @abstractmethod
@@ -76,74 +62,39 @@ class BaseModel(ABC):
         self,
         request: CompletionRequest
     ) -> AsyncIterator[str]:
-        """
-        Generate streaming completion from the model
-        
-        Args:
-            request: Completion request with messages and parameters
-            
-        Yields:
-            Chunks of generated content
-        """
+        """Generates streaming completion, yielding content chunks"""
         pass
     
     @abstractmethod
     def supports_tools(self) -> bool:
-        """Check if model supports tool/function calling"""
+        """Returns whether model supports function/tool calling"""
         pass
     
     @abstractmethod
     def supports_vision(self) -> bool:
-        """Check if model supports vision/image inputs"""
+        """Returns whether model supports image/vision inputs"""
         pass
     
     @abstractmethod
     def get_max_tokens(self) -> int:
-        """Get maximum token limit for this model"""
+        """Returns maximum token limit for this model"""
         pass
     
     def count_tokens(self, text: str) -> int:
-        """
-        Estimate token count for text
-        
-        Args:
-            text: Input text
-            
-        Returns:
-            Estimated token count
-        """
-        # Simple estimation: ~4 characters per token
+        """Estimates token count using simple heuristic (~4 chars per token)"""
         return len(text) // 4
     
     def format_messages(self, messages: List[Message]) -> Any:
-        """
-        Format messages for the specific model API
-        
-        Args:
-            messages: List of messages
-            
-        Returns:
-            Formatted messages for the model
-        """
-        # Default implementation - override in subclasses
+        """Formats messages for model-specific API format (override in subclasses)"""
         return [{"role": msg.role, "content": msg.content} for msg in messages]
     
     def extract_tool_calls(self, response: Any) -> Optional[List[ToolCall]]:
-        """
-        Extract tool calls from model response
-        
-        Args:
-            response: Raw model response
-            
-        Returns:
-            List of tool calls if present
-        """
-        # Default implementation - override in subclasses
+        """Extracts tool calls from raw model response (override in subclasses)"""
         return None
 
 
 class ModelRegistry:
-    """Registry for managing model instances"""
+    """Central registry for managing LLM model instances"""
     
     def __init__(self):
         self._models: Dict[str, BaseModel] = {}

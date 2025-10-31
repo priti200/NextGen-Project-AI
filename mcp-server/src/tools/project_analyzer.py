@@ -1,6 +1,5 @@
 """
-Project Analyzer Tool
-Analyzes project health, velocity, and metrics from Jira
+Project Analyzer Tool - Jira project health and velocity analysis
 """
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -10,7 +9,7 @@ from .base import BaseTool, ToolParameter, ToolParameterType, ToolResult
 
 
 class ProjectAnalyzerTool(BaseTool):
-    """Analyzes project health and metrics"""
+    """Analyzes Jira projects for health metrics, velocity, and potential risks"""
     
     name = "analyze_project"
     description = "Analyzes project health, velocity, and key metrics from Jira"
@@ -46,25 +45,15 @@ class ProjectAnalyzerTool(BaseTool):
         }
     
     async def execute(self, parameters: Dict[str, Any]) -> ToolResult:
-        """
-        Execute project analysis
-        
-        Args:
-            parameters: Tool parameters including project_key and analysis_type
-            
-        Returns:
-            ToolResult with analysis data
-        """
+        """Executes project analysis based on specified type and time period"""
         try:
             project_key = parameters["project_key"]
             analysis_type = parameters.get("analysis_type", "comprehensive")
             time_period = parameters.get("time_period_days", 30)
             
-            # Check if Jira is configured
             if not self.jira_url or not self.jira_token:
                 return self._mock_analysis(project_key, analysis_type, time_period)
             
-            # Perform real analysis
             analysis_result = await self._analyze_jira_project(
                 project_key, 
                 analysis_type, 
@@ -94,14 +83,12 @@ class ProjectAnalyzerTool(BaseTool):
         analysis_type: str, 
         time_period: int
     ) -> Dict[str, Any]:
-        """Perform actual Jira project analysis"""
+        """Performs Jira project analysis using REST API"""
         
         async with httpx.AsyncClient() as client:
-            # Calculate date range
             end_date = datetime.utcnow()
             start_date = end_date - timedelta(days=time_period)
             
-            # Fetch issues
             jql = f"project = {project_key} AND updated >= -{time_period}d"
             
             response = await client.get(
@@ -117,7 +104,6 @@ class ProjectAnalyzerTool(BaseTool):
             
             issues = response.json().get("issues", [])
             
-            # Analyze based on type
             if analysis_type == "comprehensive":
                 return self._comprehensive_analysis(issues, time_period)
             elif analysis_type == "velocity":
@@ -130,10 +116,9 @@ class ProjectAnalyzerTool(BaseTool):
                 return self._comprehensive_analysis(issues, time_period)
     
     def _comprehensive_analysis(self, issues: list, time_period: int) -> Dict[str, Any]:
-        """Comprehensive project analysis"""
+        """Generates comprehensive project analysis with all metrics"""
         total_issues = len(issues)
         
-        # Status breakdown
         status_counts = {}
         priority_counts = {}
         type_counts = {}

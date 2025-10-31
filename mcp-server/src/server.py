@@ -1,8 +1,8 @@
 """
-MCP Server - Main FastAPI application
-Model Context Protocol server with multi-LLM support
+MCP Server - FastAPI implementation of Model Context Protocol
+Multi-LLM support with integrated tools for project management and analysis
 """
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -10,6 +10,9 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import uuid
 from datetime import datetime
+import time
+import psutil
+import sys
 
 from config import get_settings, get_model_config
 from models.base import (
@@ -20,22 +23,29 @@ from models.factory import initialize_models
 from tools.base import tool_registry, ToolResult
 from tools.factory import initialize_tools
 from utils.logger import setup_logging, get_logger
+from middleware.security import rate_limit_middleware, security_headers_middleware
 
-# Initialize settings and logger
 settings = get_settings()
 logger = get_logger(__name__)
 
+# Server state tracking
+server_state = {
+    "startup_time": None,
+    "is_ready": False,
+    "total_requests": 0,
+    "failed_requests": 0
+}
 
-# Pydantic models for API
+
 class InitializeRequest(BaseModel):
-    """MCP initialize request"""
+    """Request model for MCP session initialization"""
     protocol_version: str = "1.0"
     client_info: Dict[str, str]
     capabilities: Optional[Dict[str, Any]] = None
 
 
 class InitializeResponse(BaseModel):
-    """MCP initialize response"""
+    """Response model for MCP session initialization"""
     session_id: str
     protocol_version: str
     server_info: Dict[str, str]
@@ -43,19 +53,19 @@ class InitializeResponse(BaseModel):
 
 
 class ToolCallRequest(BaseModel):
-    """Request to call a tool"""
+    """Request model for tool execution"""
     session_id: str
     name: str
     parameters: Dict[str, Any]
 
 
 class ToolListResponse(BaseModel):
-    """Response with list of available tools"""
+    """Response model with available tools listing"""
     tools: List[Dict[str, Any]]
 
 
 class CompletionRequestAPI(BaseModel):
-    """API request for LLM completion"""
+    """Request model for LLM completion generation"""
     session_id: Optional[str] = None
     model: Optional[str] = None
     messages: List[Message]
@@ -66,7 +76,7 @@ class CompletionRequestAPI(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response"""
+    """Response model for health check endpoint"""
     status: str
     timestamp: str
     version: str
@@ -74,52 +84,93 @@ class HealthResponse(BaseModel):
     tools_available: int
 
 
-# Session storage (in production, use Redis or database)
+class ReadinessResponse(BaseModel):
+    """Response model for readiness probe"""
+    ready: bool
+    services: Dict[str, str]
+    uptime_seconds: float
+
+
+class MetricsResponse(BaseModel):
+    """Response model for metrics endpoint"""
+    uptime_seconds: float
+    total_requests: int
+    failed_requests: int
+    success_rate: float
+    memory_usage_mb: float
+    cpu_percent: float
+    active_sessions: int
+
+
+# In-memory session storage (use Redis/database for production)
 sessions: Dict[str, Dict[str, Any]] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager"""
-    # Startup
+    """Manages application startup and shutdown lifecycle"""
+    server_state["startup_time"] = time.time()
+    
     logger.info("Starting MCP Server", 
                 host=settings.mcp_server_host, 
                 port=settings.mcp_server_port)
     
-    # Initialize LLM models
-    logger.info("Initializing LLM models...")
-    initialize_models()
-    
-    # Initialize tools
-    logger.info("Initializing tools...")
-    tools_config = {
-        "jira_api_url": settings.jira_api_url,
-        "jira_api_token": settings.jira_api_token,
-        "jira_email": settings.jira_email,
-        "github_token": settings.github_token,
-        "github_api_url": settings.github_api_url,
-        "ml_service_url": settings.ml_service_url
-    }
-    initialize_tools(tools_config)
-    
-    logger.info("MCP Server started successfully")
+    try:
+        logger.info("Initializing LLM models...")
+        initialize_models()
+        
+        logger.info("Initializing tools...")
+        tools_config = {
+            "jira_api_url": settings.jira_api_url,
+            "jira_api_token": settings.jira_api_token,
+            "jira_email": settings.jira_email,
+            "github_token": settings.github_token,
+            "github_api_url": settings.github_api_url,
+            "ml_service_url": settings.ml_service_url
+        }
+        initialize_tools(tools_config)
+        
+        server_state["is_ready"] = True
+        logger.info("MCP Server started successfully")
+        
+    except Exception as e:
+        logger.error("Failed to initialize MCP Server", error=str(e))
+        server_state["is_ready"] = False
+        raise
     
     yield
     
-    # Shutdown
-    logger.info("Shutting down MCP Server")
+    logger.info("Shutting down MCP Server gracefully")
+    server_state["is_ready"] = False
+    
+    # Cleanup resources
     sessions.clear()
+    logger.info("Server shutdown complete")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="NextGen Project AI - MCP Server",
-    description="Model Context Protocol server with multi-LLM support",
+    description="Model Context Protocol server with multi-LLM support and integrated tools for project management",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
-# Configure CORS
+# Request tracking middleware
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    server_state["total_requests"] += 1
+    try:
+        response = await call_next(request)
+        if response.status_code >= 400:
+            server_state["failed_requests"] += 1
+        return response
+    except Exception as e:
+        server_state["failed_requests"] += 1
+        raise
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins(),
@@ -128,14 +179,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add security middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    return await security_headers_middleware(request, call_next)
+
+@app.middleware("http")
+async def add_rate_limiting(request: Request, call_next):
+    # Skip rate limiting for health checks
+    if request.url.path in ["/health", "/ready", "/metrics"]:
+        return await call_next(request)
+    return await rate_limit_middleware(request, call_next)
+
 
 # ============================================================================
 # Health & Status Endpoints
 # ============================================================================
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """Health check endpoint"""
+    """
+    Health check endpoint for monitoring and load balancers.
+    Returns basic server health and available resources.
+    """
     return HealthResponse(
         status="healthy",
         timestamp=datetime.utcnow().isoformat(),
@@ -145,15 +211,67 @@ async def health_check():
     )
 
 
-@app.get("/")
+@app.get("/ready", response_model=ReadinessResponse, tags=["Health"])
+async def readiness_check():
+    """
+    Readiness probe for Kubernetes and orchestration systems.
+    Indicates if server is ready to accept requests.
+    """
+    uptime = time.time() - server_state["startup_time"] if server_state["startup_time"] else 0
+    
+    services_status = {
+        "models": "ready" if len(model_registry.list_models()) > 0 else "not_ready",
+        "tools": "ready" if len(tool_registry.list_tools()) > 0 else "not_ready",
+        "server": "ready" if server_state["is_ready"] else "not_ready"
+    }
+    
+    all_ready = all(status == "ready" for status in services_status.values())
+    
+    return ReadinessResponse(
+        ready=all_ready,
+        services=services_status,
+        uptime_seconds=round(uptime, 2)
+    )
+
+
+@app.get("/metrics", response_model=MetricsResponse, tags=["Monitoring"])
+async def metrics():
+    """
+    Metrics endpoint for monitoring systems (Prometheus compatible).
+    Returns operational metrics and resource usage.
+    """
+    uptime = time.time() - server_state["startup_time"] if server_state["startup_time"] else 0
+    total_requests = server_state["total_requests"]
+    failed_requests = server_state["failed_requests"]
+    success_rate = ((total_requests - failed_requests) / total_requests * 100) if total_requests > 0 else 100.0
+    
+    process = psutil.Process()
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    cpu_percent = process.cpu_percent(interval=0.1)
+    
+    return MetricsResponse(
+        uptime_seconds=round(uptime, 2),
+        total_requests=total_requests,
+        failed_requests=failed_requests,
+        success_rate=round(success_rate, 2),
+        memory_usage_mb=round(memory_mb, 2),
+        cpu_percent=round(cpu_percent, 2),
+        active_sessions=len(sessions)
+    )
+
+
+@app.get("/", tags=["Info"])
 async def root():
-    """Root endpoint"""
+    """Root endpoint with service information and documentation links"""
     return {
         "service": "NextGen Project AI - MCP Server",
         "version": "1.0.0",
         "protocol": "Model Context Protocol",
         "status": "running",
-        "docs": "/docs"
+        "docs": "/docs",
+        "health": "/health",
+        "ready": "/ready",
+        "metrics": "/metrics"
     }
 
 
@@ -161,16 +279,16 @@ async def root():
 # MCP Protocol Endpoints
 # ============================================================================
 
-@app.post("/mcp/initialize", response_model=InitializeResponse)
+@app.post("/mcp/initialize", response_model=InitializeResponse, tags=["MCP Protocol"])
 async def initialize_session(request: InitializeRequest):
     """
-    Initialize a new MCP session
+    Initialize a new MCP session.
     
-    Creates a new session and returns session ID with server capabilities
+    Creates a new session with unique ID and returns server capabilities.
+    This should be the first call when establishing a connection.
     """
     session_id = str(uuid.uuid4())
     
-    # Store session info
     sessions[session_id] = {
         "created_at": datetime.utcnow().isoformat(),
         "client_info": request.client_info,
@@ -201,12 +319,13 @@ async def initialize_session(request: InitializeRequest):
     )
 
 
-@app.post("/mcp/tools/list", response_model=ToolListResponse)
+@app.post("/mcp/tools/list", response_model=ToolListResponse, tags=["MCP Protocol", "Tools"])
 async def list_tools(session_id: Optional[str] = None):
     """
-    List all available tools
+    List all available tools.
     
-    Returns list of tools with their definitions and parameters
+    Returns comprehensive list of tools with their parameters, descriptions,
+    and requirements. Use this to discover available capabilities.
     """
     tools = tool_registry.list_tools()
     
@@ -231,21 +350,20 @@ async def list_tools(session_id: Optional[str] = None):
     )
 
 
-@app.post("/mcp/tools/call", response_model=ToolResult)
+@app.post("/mcp/tools/call", response_model=ToolResult, tags=["MCP Protocol", "Tools"])
 async def call_tool(request: ToolCallRequest):
     """
-    Execute a tool
+    Execute a specific tool.
     
-    Validates parameters and executes the specified tool
+    Calls the specified tool with provided parameters after validation.
+    Returns execution results or error information.
     """
-    # Validate session
     if request.session_id not in sessions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found"
         )
     
-    # Get tool
     tool = tool_registry.get(request.name)
     if not tool:
         raise HTTPException(
@@ -253,7 +371,6 @@ async def call_tool(request: ToolCallRequest):
             detail=f"Tool '{request.name}' not found"
         )
     
-    # Validate parameters
     is_valid, error_msg = tool.validate_parameters(request.parameters)
     if not is_valid:
         raise HTTPException(
@@ -261,7 +378,6 @@ async def call_tool(request: ToolCallRequest):
             detail=error_msg
         )
     
-    # Execute tool
     try:
         logger.info("Executing tool", 
                    tool_name=request.name, 
@@ -286,24 +402,22 @@ async def call_tool(request: ToolCallRequest):
         )
 
 
-@app.post("/mcp/completion", response_model=CompletionResponse)
+@app.post("/mcp/completion", response_model=CompletionResponse, tags=["MCP Protocol", "LLM"])
 async def generate_completion(request: CompletionRequestAPI):
     """
-    Generate LLM completion
+    Generate LLM completion.
     
-    Processes messages and generates response using specified model
+    Processes messages through specified LLM model and returns generated response.
+    Supports tool calling, streaming, and context management.
     """
-    # Select model
     model_name = request.model or settings.default_model
     
-    # Validate model is configured
     if not settings.validate_model_config(model_name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Model '{model_name}' is not configured. Please set API key."
         )
     
-    # Get model instance
     model = model_registry.get(model_name)
     if not model:
         raise HTTPException(
@@ -311,7 +425,6 @@ async def generate_completion(request: CompletionRequestAPI):
             detail=f"Model '{model_name}' not found"
         )
     
-    # Create completion request
     completion_request = CompletionRequest(
         messages=request.messages,
         model=model_name,
@@ -326,10 +439,8 @@ async def generate_completion(request: CompletionRequestAPI):
                    model=model_name, 
                    messages_count=len(request.messages))
         
-        # Generate completion
         response = await model.generate(completion_request)
         
-        # Update session context if session_id provided
         if request.session_id and request.session_id in sessions:
             sessions[request.session_id]["context"].append({
                 "timestamp": datetime.utcnow().isoformat(),
@@ -354,9 +465,14 @@ async def generate_completion(request: CompletionRequestAPI):
         )
 
 
-@app.get("/mcp/session/{session_id}")
+@app.get("/mcp/session/{session_id}", tags=["MCP Protocol", "Session"])
 async def get_session(session_id: str):
-    """Get session information"""
+    """
+    Get session information.
+    
+    Retrieves details about a specific session including creation time,
+    client info, and context length.
+    """
     if session_id not in sessions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -372,9 +488,14 @@ async def get_session(session_id: str):
     }
 
 
-@app.delete("/mcp/session/{session_id}")
+@app.delete("/mcp/session/{session_id}", tags=["MCP Protocol", "Session"])
 async def delete_session(session_id: str):
-    """Delete a session"""
+    """
+    Delete a session.
+    
+    Removes session and clears all associated context and data.
+    Use this for cleanup when session is no longer needed.
+    """
     if session_id not in sessions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -393,7 +514,7 @@ async def delete_session(session_id: str):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler"""
+    """Handles all unhandled exceptions with logging"""
     logger.error("Unhandled exception", 
                 error=str(exc), 
                 path=str(request.url))
@@ -413,15 +534,26 @@ async def global_exception_handler(request, exc):
 
 if __name__ == "__main__":
     import uvicorn
+    import signal
     
-    # Setup logging
     setup_logging(
         log_level=settings.mcp_log_level,
         log_file="logs/mcp_server.log" if not settings.mcp_debug else None,
         json_logs=False
     )
     
-    # Run server
+    # Graceful shutdown handler
+    def handle_shutdown(signum, frame):
+        logger.info(f"Received signal {signum}, initiating graceful shutdown")
+        server_state["is_ready"] = False
+        sys.exit(0)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    
+    logger.info("Starting MCP Server with graceful shutdown support")
+    
     uvicorn.run(
         "server:app",
         host=settings.mcp_server_host,

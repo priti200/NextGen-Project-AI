@@ -1,6 +1,5 @@
 """
-Risk Predictor Tool
-Predicts project risks using ML models and historical data
+Risk Predictor Tool - ML-powered project risk assessment
 """
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -10,7 +9,7 @@ from .base import BaseTool, ToolParameter, ToolParameterType, ToolResult
 
 
 class RiskPredictorTool(BaseTool):
-    """Predicts project risks using ML and pattern analysis"""
+    """Predicts project risks using machine learning models and historical patterns"""
     
     name = "predict_risk"
     description = "Predicts project risks based on historical data and current metrics"
@@ -48,22 +47,13 @@ class RiskPredictorTool(BaseTool):
         }
     
     async def execute(self, parameters: Dict[str, Any]) -> ToolResult:
-        """
-        Execute risk prediction
-        
-        Args:
-            parameters: Tool parameters including project_key
-            
-        Returns:
-            ToolResult with risk predictions
-        """
+        """Executes risk prediction using ML or heuristic analysis"""
         try:
             project_key = parameters["project_key"]
             component = parameters.get("component_name")
             horizon = parameters.get("prediction_horizon_days", 30)
             include_recs = parameters.get("include_recommendations", True)
             
-            # Check if ML service is available
             if self.ml_service_url:
                 prediction = await self._ml_prediction(
                     project_key, component, horizon
@@ -73,7 +63,6 @@ class RiskPredictorTool(BaseTool):
                     project_key, component, horizon
                 )
             
-            # Add recommendations if requested
             if include_recs:
                 prediction["recommendations"] = self._generate_recommendations(
                     prediction
@@ -102,7 +91,7 @@ class RiskPredictorTool(BaseTool):
         component: Optional[str], 
         horizon: int
     ) -> Dict[str, Any]:
-        """Use ML service for prediction"""
+        """Calls ML service for advanced risk prediction"""
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -122,9 +111,8 @@ class RiskPredictorTool(BaseTool):
         component: Optional[str], 
         horizon: int
     ) -> Dict[str, Any]:
-        """Heuristic-based risk prediction when ML service unavailable"""
+        """Generates risk prediction using rule-based heuristics"""
         
-        # Mock risk factors (in production, fetch from database)
         risk_factors = {
             "velocity_trend": "declining",
             "blocker_count": 5,
@@ -134,12 +122,10 @@ class RiskPredictorTool(BaseTool):
             "test_coverage": 68
         }
         
-        # Calculate risk scores
         schedule_risk = self._calculate_schedule_risk(risk_factors)
         quality_risk = self._calculate_quality_risk(risk_factors)
         resource_risk = self._calculate_resource_risk(risk_factors)
         
-        # Overall risk
         overall_risk = (schedule_risk + quality_risk + resource_risk) / 3
         
         return {
