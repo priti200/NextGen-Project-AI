@@ -18,6 +18,7 @@ from models.base import (
 )
 from models.factory import initialize_models
 from tools.base import tool_registry, ToolResult
+from tools.factory import initialize_tools
 from utils.logger import setup_logging, get_logger
 
 # Initialize settings and logger
@@ -89,8 +90,17 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing LLM models...")
     initialize_models()
     
-    # Initialize tools (will be implemented in next task)
+    # Initialize tools
     logger.info("Initializing tools...")
+    tools_config = {
+        "jira_api_url": settings.jira_api_url,
+        "jira_api_token": settings.jira_api_token,
+        "jira_email": settings.jira_email,
+        "github_token": settings.github_token,
+        "github_api_url": settings.github_api_url,
+        "ml_service_url": settings.ml_service_url
+    }
+    initialize_tools(tools_config)
     
     logger.info("MCP Server started successfully")
     
