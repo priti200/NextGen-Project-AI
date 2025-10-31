@@ -20,11 +20,11 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+# Create non-root user first
+RUN useradd -m -u 1000 mcpuser
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+# Copy Python dependencies from builder to mcpuser's directory
+COPY --from=builder /root/.local /home/mcpuser/.local
 
 # Copy application code
 COPY src/ ./src/
@@ -32,14 +32,19 @@ COPY src/ ./src/
 # Create logs directory
 RUN mkdir -p logs
 
+# Change ownership to mcpuser
+RUN chown -R mcpuser:mcpuser /app /home/mcpuser/.local
+
+# Switch to non-root user
+USER mcpuser
+
+# Make sure scripts in .local are usable
+ENV PATH=/home/mcpuser/.local/bin:$PATH
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# Create non-root user for security
-RUN useradd -m -u 1000 mcpuser && \
-    chown -R mcpuser:mcpuser /app
-USER mcpuser
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src
 
 # Expose port
 EXPOSE 8080

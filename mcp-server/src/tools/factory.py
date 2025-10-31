@@ -5,7 +5,7 @@ Initializes and registers all MCP tools
 from typing import Dict, Optional
 import structlog
 
-from .base import ToolRegistry
+from .base import tool_registry
 from .project_analyzer import ProjectAnalyzerTool
 from .risk_predictor import RiskPredictorTool
 from .code_analyzer import CodeAnalyzerTool
@@ -15,19 +15,17 @@ from .github_integration import GitHubIntegrationTool
 logger = structlog.get_logger()
 
 
-def initialize_tools(config: Optional[Dict] = None) -> ToolRegistry:
+def initialize_tools(config: Optional[Dict] = None):
     """
     Initialize and register all MCP tools
     
     Args:
         config: Configuration dictionary containing API keys and URLs
-        
-    Returns:
-        ToolRegistry with all tools registered
     """
     logger.info("Initializing MCP tools...")
     
-    registry = ToolRegistry()
+    # Use the global tool registry singleton
+    registry = tool_registry
     tools_config = {}
     
     if config:
@@ -92,10 +90,8 @@ def initialize_tools(config: Optional[Dict] = None) -> ToolRegistry:
     logger.info(
         "Tool initialization complete",
         tools_initialized=tools_initialized,
-        tools_available=list(registry.list_tools().keys())
+        tools_available=[tool.name for tool in registry.list_tools()]
     )
-    
-    return registry
 
 
 def get_tool_summary() -> Dict[str, any]:

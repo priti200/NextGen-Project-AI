@@ -25,11 +25,20 @@ def initialize_models() -> None:
     # Initialize Google Gemini models
     if settings.google_api_key:
         try:
-            # Register Gemini Pro
+            # Register Gemini 2.5 Flash (fast and efficient)
+            gemini_flash = GeminiModel(
+                api_key=settings.google_api_key,
+                model_name="gemini-2.5-flash",
+                max_tokens=8192
+            )
+            model_registry.register("gemini-2.5-flash", gemini_flash)
+            logger.info("Registered model", model="gemini-2.5-flash")
+            
+            # Register Gemini Pro (for backwards compatibility, uses same model)
             gemini_pro = GeminiModel(
                 api_key=settings.google_api_key,
-                model_name="gemini-2.5-pro",
-                max_tokens=2048
+                model_name="gemini-2.5-flash",
+                max_tokens=8192
             )
             model_registry.register("gemini-pro", gemini_pro)
             logger.info("Registered model", model="gemini-pro")

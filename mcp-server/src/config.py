@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None
     
     # Model defaults
-    default_model: str = "gemini-pro"
-    max_tokens: int = 2048
+    default_model: str = "gemini-2.5-flash"
+    max_tokens: int = 8192
     temperature: float = 0.7
     
     # Database configuration
@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     secret_key: str = "change_this_secret_key_in_production"
     algorithm: str = "HS256"
     api_key: Optional[str] = None
+    
+    # ML Service configuration (for risk prediction and code analysis)
+    ml_service_url: Optional[str] = None
     
     class Config:
         env_file = ".env"
