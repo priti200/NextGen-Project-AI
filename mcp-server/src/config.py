@@ -2,7 +2,7 @@
 Configuration management for MCP Server
 """
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from functools import lru_cache
 
 
@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     secret_key: str = "change_this_secret_key_in_production"
     algorithm: str = "HS256"
     
+    # Custom Model Configuration (dynamically loaded)
+    # Format: CUSTOM_MODEL_<N>_<PROPERTY>
+    # These are loaded dynamically in get_custom_models()
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
@@ -74,7 +78,46 @@ class Settings(BaseSettings):
             return self.openai_api_key is not None
         elif model_name.startswith("claude"):
             return self.anthropic_api_key is not None
+        elif model_name.startswith("custom-"):
+            return True  # Custom models are validated separately
         return False
+    
+    def get_custom_models(self) -> List[Dict[str, Any]]:
+        """
+        Parse custom model configurations from environment variables
+        
+        Returns:
+            List of custom model configurations
+        """
+        import os
+        custom_models = []
+        model_index = 1
+        
+        while True:
+            prefix = f"CUSTOM_MODEL_{model_index}_"
+            name_key = f"{prefix}NAME"
+            
+            # Check if this custom model is configured
+            if name_key not in os.environ:
+                break
+            
+            # Extract configuration
+            config = {
+                "name": os.environ.get(name_key),
+                "base_url": os.environ.get(f"{prefix}BASE_URL"),
+                "api_key": os.environ.get(f"{prefix}API_KEY", "dummy"),
+                "max_tokens": int(os.environ.get(f"{prefix}MAX_TOKENS", "4096")),
+                "supports_tools": os.environ.get(f"{prefix}SUPPORTS_TOOLS", "false").lower() == "true",
+                "supports_vision": os.environ.get(f"{prefix}SUPPORTS_VISION", "false").lower() == "true",
+            }
+            
+            # Validate required fields
+            if config["name"] and config["base_url"]:
+                custom_models.append(config)
+            
+            model_index += 1
+        
+        return custom_models
 
 
 @lru_cache()
